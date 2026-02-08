@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Моніторинг: Visicom + Smooth Fix</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    <script src="https://unpkg.com/leaflet-rotatedmarker@0.2.0/leaflet.rotatedMarker.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        html, body { height: 100%; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; overflow: hidden; }
+        #map { height: 100vh; width: 100vw; background: #eeb; z-index: 0; }
+        
+        /* Плавний поворот для маркерів */
+        .smooth-rotate { transition: transform 0.1s linear; }
+
+        /* Стиль панелей */
+        .panel { position: absolute; left: 10px; z-index: 1000; background: #fff; border: 1px solid #999; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); padding: 8px; font-size: 14px; color: #000; }
+        .btn-main { cursor: pointer; font-weight: 700; transition: background 0.2s; width: 110px; text-align: center; }
+        .btn-main:hover { background: #f0f0f0; }
+        .btn-active { background: #ffeaea; border-color: red; }
+
+        /* Позиції кнопок */
+        #shahidBtn { top: 10px; }
+        #krBtn     { top: 55px; }
+        #screenBtn { top: 100px; }
+        #wmBtn     { top: 145px; }
+        #searchPanel { top: 190px; width: 300px; }
+        #telegramPanel { top: auto; bottom: 45px; left: 10px; width: 300px; }
+        #watermarkPanel { display: none; top: 145px; right: 10px; left: auto; width: 240px; border: 2px solid #2196f3; }
+        #regionListPanel { top: 290px; right: 10px; left: auto; width: 220px; max-height: 40vh; display: flex; flex-direction: column; }
+        
+        .region-list-container { flex: 1; overflow-y: auto; margin-top: 5px; border: 1px solid #eee; }
+        .region-item { display: flex; align-items: center; padding: 4px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+        .region-item:hover { background: #f9f9f9; }
+        .region-item input { margin-right: 8px; width: auto; }
+        .region-toggle-btn { font-size: 12px; cursor: pointer; color: blue; text-decoration: underline; float: right; }
+
+        #counterBox { position: absolute; top: 10px; right: 10px; z-index: 1000; background: #fff; border: 1px solid #999; padding: 8px 12px; border-radius: 8px; font-weight: 700; font-size: 16px; }
+        #bottomPanel { position: fixed; bottom: 0; left: 0; width: 100%; height: 35px; background: rgba(255,255,255,0.9); border-top: 1px solid #ccc; display: flex; align-items: center; justify-content: center; z-index: 1000; font-weight: bold; font-size: 13px; color: #555; }
+        
+        input[type="text"], input[type="password"], textarea { width: 100%; padding: 6px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; margin-top: 4px; }
+        textarea { resize: vertical; height: 60px; font-family: inherit; }
+        button.action-btn { width: 100%; margin-top: 8px; padding: 6px; cursor: pointer; background: #eee; border: 1px solid #ccc; border-radius: 4px; font-weight: bold; }
+        button.action-btn:hover { background: #ddd; }
+        #tgSendBtn { background: #e3f2fd; border-color: #2196f3; color: #0d47a1; }
+        #tgSendBtn:hover { background: #bbdefb; }
+        .tg-settings { display: none; margin-top: 5px; border-top: 1px dashed #ccc; padding-top: 5px; }
+        .tg-toggle { font-size: 12px; color: #666; cursor: pointer; text-decoration: underline; margin-bottom: 5px; display: inline-block; }
+        .emoji-bar { margin: 5px 0; display: flex; flex-wrap: wrap; gap: 4px; }
+        .emoji-btn { cursor: pointer; font-size: 16px; padding: 2px 4px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; user-select: none; }
+        .file-upload-box { margin-top: 5px; font-size: 12px; }
+        .hintList { margin-top: 5px; max-height: 250px; overflow-y: auto; border: 1px solid #999; display: none; background: #fff; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+        .hintItem { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; font-size: 14px; line-height: 1.4; color: #333; }
+        .hintItem:hover { background: #f0f8ff; color: #000; }
+        .watermark-container { pointer-events: none; overflow: hidden; z-index: 9999; }
+
+        @media (max-width: 600px) {
+            #watermarkPanel { top: 50%; left: 50%; transform: translate(-50%, -50%); right: auto; width: 250px; }
+            #regionListPanel { top: auto; bottom: 180px; right: 10px; width: 200px; height: 150px;}
+            #searchPanel { width: 220px; top: 195px; }
+            #telegramPanel { width: 220px; bottom: 45px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="shahidBtn" class="panel btn-main">✈️ Шахед</div>
+    <div id="krBtn" class="panel btn-main">🚀 КР</div>
+    <div id="screenBtn" class="panel btn-main">📷 Скрін</div>
+    <div id="wmBtn" class="panel btn-main">💧 Вод. знак</div>
+    <div id="counterBox">Цілей: <span id="shahedCount">0</span></div>
+
+    <div id="searchPanel" class="panel">
+        <div style="font-weight:700">Пошук (Україна)</div>
+        <input id="searchInput" type="text" placeholder="Назва (напр. Київ)" autocomplete="off">
+        <button id="searchBtn" class="action-btn">Знайти</button>
+        <div id="hintList" class="hintList"></div>
+    </div>
+
+    <div id="telegramPanel" class="panel">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-weight:700">Telegram</div>
+            <div id="tgConfigToggle" class="tg-toggle">Налаштування</div>
+        </div>
+        <div id="tgSettings" class="tg-settings">
+            <div style="font-size:12px; color:#555">Bot Token:</div>
+            <input id="tgToken" type="password" placeholder="123456:ABC-DEF...">
+            <div style="font-size:12px; color:#555; margin-top:5px">Chat ID:</div>
+            <input id="tgChatId" type="text" placeholder="-100...">
+            <button id="tgSaveBtn" class="action-btn" style="font-size:12px; padding:4px;">Зберегти дані</button>
+        </div>
+        <div class="emoji-bar">
+            <div class="emoji-btn">🔴</div><div class="emoji-btn">⚠️</div><div class="emoji-btn">✈️</div>
+            <div class="emoji-btn">🚀</div><div class="emoji-btn">💥</div><div class="emoji-btn">📍</div>
+            <div class="emoji-btn">➡️</div><div class="emoji-btn">🇺🇦</div>
+        </div>
+        <textarea id="tgMessage" placeholder="Введіть повідомлення..."></textarea>
+        <div class="file-upload-box">
+            <div>Прикріпити фото (опціонально):</div>
+            <input type="file" id="tgPhotoFile" accept="image/*">
+        </div>
+        <button id="tgSendBtn" class="action-btn">Надіслати в канал</button>
+    </div>
+
+    <div id="watermarkPanel" class="panel">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-weight:700">Налаштування Watermark</div>
+            <div id="closeWmPanel" style="cursor:pointer; font-weight:bold;">✕</div>
+        </div>
+        <div style="margin-top:5px; font-size:12px;">Текст:</div>
+        <input id="wmText" type="text" placeholder="@MonitorUkrainian" value="@MonitorUkrainian">
+        <div style="margin-top:5px; font-size:12px;">Колір тексту:</div>
+        <input id="wmColor" type="color" value="#000000" style="width:100%; height:30px; cursor:pointer;">
+        <div style="margin-top:5px; font-size:12px;">Прозорість: <span id="wmOpacityVal">0.3</span></div>
+        <input id="wmOpacity" type="range" min="0.1" max="1" step="0.1" value="0.3" style="width:100%" oninput="document.getElementById('wmOpacityVal').innerText=this.value">
+        <div style="margin-top:5px; font-size:12px;">Щільність (крок):</div>
+        <input id="wmStep" type="range" min="150" max="500" step="50" value="250" style="width:100%">
+        <button id="applyWm" class="action-btn" style="background:#d4edda; border-color:#c3e6cb; color:#155724;">✅ Оновити / Показати</button>
+        <button id="removeWm" class="action-btn" style="background:#f8d7da; border-color:#f5c6cb; color:#721c24; margin-top:5px;">❌ Видалити знак</button>
+    </div>
+
+    <div id="regionListPanel" class="panel">
+        <div style="font-weight:700; border-bottom:1px solid #ccc; padding-bottom:5px;">
+            Області <span id="clearRegions" class="region-toggle-btn">Очистити</span>
+        </div>
+        <div id="regionContainer" class="region-list-container">
+            <div style="color:#777; padding:10px; text-align:center">Завантаження...</div>
+        </div>
+    </div>
+    <div id="bottomPanel">Натисни 'F' (або 'А'), щоб приховати/показати меню</div>
+
+    <script>
+        window.onload = function() {
+            if (typeof L === 'undefined') { alert('Помилка: Leaflet не завантажився. Перевірте інтернет.'); return; }
+            const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OSM', maxZoom: 18 });
+            const visicom = L.tileLayer('https://tms{s}.visicom.ua/2.0.0/planet3/base/{z}/{x}/{y}.png', { attribution: '&copy; Visicom', subdomains: '123', maxZoom: 19, tms: true });
+            const map = L.map('map', { preferCanvas: true, zoomControl: false, layers: [visicom] }).setView([49.0, 31.0], 6);
+            const baseMaps = { "Візіком": visicom, "OSM (Звичайна)": osm };
+            L.control.layers(baseMaps).addTo(map);
+            L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+            const icons = {
+                shahid: 'photo_2025-08-17_12-12-57-removebg-preview.png',
+                kr: 'Знімок_екрана_2025-11-22_153618-removebg-preview.png'
+            };
+            let baseSize = 30;
+            let currentSize = baseSize;
+            let activeMode = null; 
+            let tempMarker = null;
+            let rotationAngle = 0;
+            let totalCount = 0;
+            let geoLayers = { gromady: null, regions: null };
+            const gromadyIndex = [];
+            const selectedRegionIds = new Set();
+
+            async function loadGeoJSON(url, type) {
+                try {
+                    const resp = await fetch(url);
+                    if (!resp.ok) return;
+                    const data = await resp.json();
+                    const layer = L.geoJSON(data, {
+                        style: (feature) => {
+                            if (type === 'region') return { color: 'red', weight: 2, fillOpacity: 0 };
+                            return { color: 'transparent', weight: 0, fillOpacity: 0 };
+                        },
+                        onEachFeature: (feature, layer) => {
+                            if(type === 'gromada') {
+                                const center = layer.getBounds().getCenter();
+                                let area = 0;
+                                if(typeof turf !== 'undefined' && feature.geometry) area = turf.area(feature.geometry);
+                                layer._activeMarkers = new Set();
+                                gromadyIndex.push({ layer, center, area });
+                            }
+                            if (type === 'region') { geoLayers.regions = layer; buildRegionList(data.features); }
+                        }
+                    }).addTo(map);
+                    if(type === 'gromada') geoLayers.gromady = layer;
+                } catch (e) { console.warn("Помилка завантаження " + url, e); }
+            }
+            loadGeoJSON('hromady.geojson', 'gromada');
+            loadGeoJSON('regiony.geojson', 'region');
+
+            function buildRegionList(features) {
+                const container = document.getElementById('regionContainer');
+                if (!container) return;
+                container.innerHTML = '';
+                const list = features.map(f => ({ name: f.properties.name || f.properties.ADMIN_1 || f.properties.uk_name || "Невідома область" })).sort((a,b) => a.name.localeCompare(b.name));
+                [...new Set(list.map(i => i.name))].forEach(name => {
+                    const div = document.createElement('div'); div.className = 'region-item';
+                    const chk = document.createElement('input'); chk.type = 'checkbox'; chk.id = 'reg_chk_' + name;
+                    chk.onchange = () => { if (chk.checked) selectedRegionIds.add(name); else selectedRegionIds.delete(name); updateRegionStyles(); };
+                    const lbl = document.createElement('label'); lbl.htmlFor = 'reg_chk_' + name; lbl.innerText = name; lbl.style.cursor = 'pointer'; lbl.style.flex = '1';
+                    div.appendChild(chk); div.appendChild(lbl); container.appendChild(div);
+                });
+            }
+            document.getElementById('clearRegions').onclick = () => {
+                selectedRegionIds.clear(); document.querySelectorAll('#regionContainer input[type="checkbox"]').forEach(c => c.checked = false); updateRegionStyles();
+            };
+            function updateRegionStyles() {
+                if (!geoLayers.regions) return;
+                geoLayers.regions.eachLayer(layer => {
+                    const f = layer.feature; const name = f.properties.name || f.properties.ADMIN_1 || f.properties.uk_name;
+                    let style = { color: 'red', weight: 2, fillColor: 'transparent', fillOpacity: 0 };
+                    if (selectedRegionIds.size > 0) {
+                        if (selectedRegionIds.has(name)) style.fillOpacity = 0;
+                        else { style.fillColor = '#000000'; style.fillOpacity = 0.65; style.weight = 1; }
+                    }
+                    layer.setStyle(style);
+                });
+            }
+
+            const btnShahid = document.getElementById('shahidBtn');
+            const btnKr = document.getElementById('krBtn');
+            function setMode(mode) {
+                if(activeMode === mode) {
+                    activeMode = null; btnShahid.classList.remove('btn-active'); btnKr.classList.remove('btn-active');
+                    if(tempMarker) { map.removeLayer(tempMarker); tempMarker = null; }
+                } else {
+                    activeMode = mode; btnShahid.classList.toggle('btn-active', mode === 'shahid'); btnKr.classList.toggle('btn-active', mode === 'kr'); rotationAngle = 0;
+                    if(tempMarker) { map.removeLayer(tempMarker); tempMarker = null; } // Скидаємо старий курсор
+                }
+            }
+            if(btnShahid) btnShahid.onclick = () => setMode('shahid');
+            if(btnKr) btnKr.onclick = () => setMode('kr');
+
+            // --- ВИПРАВЛЕНО: ПЛАВНІСТЬ І ТОЧНІСТЬ ---
+            map.on('mousemove', (e) => {
+                if (!activeMode) return;
+                const finalSize = activeMode === 'shahid' ? Math.max(5, currentSize - 10) : currentSize;
+                
+                // Якщо маркер вже є, просто рухаємо його, НЕ перестворюємо
+                if (tempMarker) {
+                    tempMarker.setLatLng(e.latlng);
+                    tempMarker.setRotationAngle(rotationAngle);
+                    return;
+                }
+
+                // Створюємо маркер 1 раз
+                const icon = L.icon({ 
+                    iconUrl: icons[activeMode], 
+                    iconSize: [finalSize, finalSize],
+                    iconAnchor: [finalSize/2, finalSize/2], // ЦЕНТР ІКОНКИ
+                    className: 'smooth-rotate' // Додаємо клас плавності
+                });
+                tempMarker = L.marker(e.latlng, { icon: icon, rotationAngle: rotationAngle, opacity: 0.7, interactive: false }).addTo(map);
+            });
+
+            map.on('click', (e) => {
+                if (!activeMode) return;
+                const finalSize = activeMode === 'shahid' ? Math.max(5, currentSize - 10) : currentSize;
+                // Точний якір по центру
+                const icon = L.icon({ 
+                    iconUrl: icons[activeMode], 
+                    iconSize: [finalSize, finalSize], 
+                    iconAnchor: [finalSize/2, finalSize/2] 
+                });
+                
+                const newMarker = L.marker(e.latlng, { icon: icon, rotationAngle: rotationAngle }).addTo(map);
+                newMarker._myType = activeMode; newMarker._linkedLayers = new Set(); totalCount++;
+                document.getElementById('shahedCount').innerText = totalCount;
+                
+                if(gromadyIndex.length > 0) {
+                     const nearest = gromadyIndex.map(g => ({ ...g, dist: e.latlng.distanceTo(g.center) })).sort((a, b) => a.dist - b.dist);
+                     const limit = (activeMode === 'shahid') ? 4000000000 : 10000000000;
+                     let currentArea = 0; const targets = [nearest[0]]; currentArea += nearest[0].area;
+                     for(let i=1; i < nearest.length; i++) {
+                        if (currentArea > limit || nearest[i].dist > 50000) break;
+                        targets.push(nearest[i]); currentArea += nearest[i].area;
+                     }
+                     targets.forEach(item => {
+                        const l = item.layer; l._activeMarkers.add(newMarker); newMarker._linkedLayers.add(l);
+                        l.setStyle({ fillColor: 'red', fillOpacity: 0.1, color: 'transparent' });
+                     });
+                }
+                newMarker.on('click', () => {
+                    newMarker._linkedLayers.forEach(layer => {
+                        layer._activeMarkers.delete(newMarker);
+                        if(layer._activeMarkers.size === 0) layer.setStyle({ fillOpacity: 0, color: 'transparent', weight: 0 });
+                    });
+                    map.removeLayer(newMarker); totalCount = Math.max(0, totalCount - 1);
+                    document.getElementById('shahedCount').innerText = totalCount;
+                });
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (['TEXTAREA','INPUT'].includes(document.activeElement.tagName)) return;
+                const key = e.key.toLowerCase(); const code = e.code;
+                if (activeMode && tempMarker) {
+                    if (code === 'KeyA' || key === 'a' || key === 'ф') rotationAngle -= 15;
+                    if (code === 'KeyD' || key === 'd' || key === 'в') rotationAngle += 15;
+                    tempMarker.setRotationAngle(rotationAngle);
+                }
+                if (code === 'KeyF' || key === 'f' || key === 'а') toggleUI();
+            });
+
+            let uiVisible = true;
+            function toggleUI() {
+                uiVisible = !uiVisible; const display = uiVisible ? 'block' : 'none';
+                document.querySelectorAll('.panel').forEach(el => { if(el.id === 'watermarkPanel' || el.id === 'tgSettings') return; el.style.display = display; });
+                if(document.getElementById('watermarkPanel').style.display === 'block' && !uiVisible) document.getElementById('watermarkPanel').style.display = 'none';
+                document.getElementById('counterBox').style.display = display;
+                document.getElementById('bottomPanel').style.display = uiVisible ? 'flex' : 'none';
+            }
+
+            // Watermark, Screen, Search, TG logic... (без змін, окрім ініціалізації)
+            const wmBtn = document.getElementById('wmBtn'); const wmPanel = document.getElementById('watermarkPanel');
+            const closeWmPanel = document.getElementById('closeWmPanel'); const applyWmBtn = document.getElementById('applyWm'); const removeWmBtn = document.getElementById('removeWm');
+            let wmLayer = null;
+            if(wmBtn) wmBtn.onclick = () => { const current = wmPanel.style.display; wmPanel.style.display = (current === 'none' || current === '') ? 'block' : 'none'; };
+            if(closeWmPanel) closeWmPanel.onclick = () => wmPanel.style.display = 'none';
+            function drawWatermark() {
+                if(wmLayer && wmLayer.parentNode) wmLayer.parentNode.removeChild(wmLayer);
+                const txt = document.getElementById('wmText').value; const col = document.getElementById('wmColor').value;
+                const op = document.getElementById('wmOpacity').value; const step = parseInt(document.getElementById('wmStep').value) || 250;
+                const container = document.createElement('div'); container.className = 'watermark-container';
+                container.style.position = 'absolute'; container.style.left = '0'; container.style.top = '0'; container.style.width = '100%'; container.style.height = '100%';
+                let html = ''; const w = window.innerWidth; const h = window.innerHeight;
+                for(let y=0; y < h + 200; y += step) { for(let x=0; x < w + 200; x += step) { html += `<div style="position:absolute; left:${x}px; top:${y}px; color:${col}; opacity:${op}; font-size:20px; font-weight:bold; transform: rotate(-30deg); white-space:nowrap; user-select: none;">${txt}</div>`; } }
+                container.innerHTML = html; map.getContainer().appendChild(container); wmLayer = container;
+            }
+            if(applyWmBtn) applyWmBtn.onclick = drawWatermark;
+            if(removeWmBtn) removeWmBtn.onclick = () => { if(wmLayer && wmLayer.parentNode) wmLayer.parentNode.removeChild(wmLayer); wmLayer = null; };
+
+            const screenBtn = document.getElementById('screenBtn');
+            screenBtn.onclick = () => {
+                const uiEls = document.querySelectorAll('.panel, #bottomPanel, .leaflet-control-zoom, #counterBox, .leaflet-control-layers');
+                const oldDisplay = []; uiEls.forEach(el => { oldDisplay.push(el.style.display); el.style.display = 'none'; });
+                if(wmLayer) wmLayer.style.display = 'block'; const originalBg = document.body.style.background; document.body.style.background = '#eeb';
+                setTimeout(() => { html2canvas(document.body, { allowTaint: false, logging: false, useCORS: true }).then(canvas => {
+                    const link = document.createElement('a'); link.download = `Map_Screen_${Date.now()}.png`; link.href = canvas.toDataURL(); link.click();
+                }).finally(() => { uiEls.forEach((el, i) => el.style.display = oldDisplay[i] || ''); document.body.style.background = originalBg; }); }, 100);
+            };
+
+            const sInput = document.getElementById('searchInput'); const sList = document.getElementById('hintList'); let sTimer = null;
+            if(sInput) sInput.addEventListener('input', () => {
+                clearTimeout(sTimer); const q = sInput.value.trim();
+                if(q.length < 2) { sList.style.display = 'none'; return; }
+                sTimer = setTimeout(async () => {
+                    try { const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=ua&accept-language=uk&limit=5`);
+                        const items = await res.json(); sList.innerHTML = '';
+                        if(items.length === 0) { sList.style.display='none'; return; }
+                        items.forEach(it => { const div = document.createElement('div'); div.className = 'hintItem'; div.innerText = it.display_name; div.onclick = () => { map.setView([parseFloat(it.lat), parseFloat(it.lon)], 12); sList.style.display = 'none'; sInput.value = it.display_name.split(',')[0]; }; sList.appendChild(div); });
+                        sList.style.display = 'block';
+                    } catch(e){}
+                }, 500);
+            });
+
+            const tgConfigToggle = document.getElementById('tgConfigToggle'); const tgSettings = document.getElementById('tgSettings');
+            if(tgConfigToggle) tgConfigToggle.onclick = () => tgSettings.style.display = (tgSettings.style.display === 'block') ? 'none' : 'block';
+            document.querySelectorAll('.emoji-btn').forEach(btn => btn.onclick = () => { const box = document.getElementById('tgMessage'); if(box) box.value += btn.innerText + ' '; });
+            const tgSaveBtn = document.getElementById('tgSaveBtn');
+            if(tgSaveBtn) tgSaveBtn.onclick = () => { localStorage.setItem('tg_bot_token', document.getElementById('tgToken').value); localStorage.setItem('tg_chat_id', document.getElementById('tgChatId').value); alert('Збережено'); tgSettings.style.display='none'; };
+            const savedToken = localStorage.getItem('tg_bot_token'); if(savedToken) document.getElementById('tgToken').value = savedToken;
+            const savedChatId = localStorage.getItem('tg_chat_id'); if(savedChatId) document.getElementById('tgChatId').value = savedChatId;
+            const tgSendBtn = document.getElementById('tgSendBtn');
+            if(tgSendBtn) tgSendBtn.onclick = async () => {
+                const token = document.getElementById('tgToken').value.trim(); const chatId = document.getElementById('tgChatId').value.trim();
+                const text = document.getElementById('tgMessage').value.trim(); const fileInp = document.getElementById('tgPhotoFile'); const file = fileInp && fileInp.files ? fileInp.files[0] : null;
+                if(!token || !chatId) { alert('Немає налаштувань TG'); return; }
+                if(!text && !file) { alert('Пусто'); return; }
+                tgSendBtn.disabled = true; tgSendBtn.innerText = '...';
+                try {
+                    const fd = new FormData(); fd.append('chat_id', chatId); fd.append('parse_mode', 'HTML');
+                    let url = `https://api.telegram.org/bot${token}/sendMessage`;
+                    if(file) { url = `https://api.telegram.org/bot${token}/sendPhoto`; fd.append('photo', file); if(text) fd.append('caption', text); await fetch(url, { method: 'POST', body: fd }); }
+                    else { await fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ chat_id: chatId, text: text, parse_mode: 'HTML' }) }); }
+                    alert('Надіслано!'); document.getElementById('tgMessage').value = ''; if(fileInp) fileInp.value = '';
+                } catch(e) { alert('Помилка: ' + e.message); } finally { tgSendBtn.disabled = false; tgSendBtn.innerText = 'Надіслати в канал'; }
+            };
+        };
+    </script>
+</body>
+</html>
